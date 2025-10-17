@@ -4,7 +4,15 @@ Configurazione personalizzata di Saleor per produzione.
 
 ## 🚀 Quick Start
 
-### Setup Iniziale
+### Per Nuovi Sviluppatori
+```bash
+# Clone e setup automatico
+git clone https://github.com/your-org/saleor-cosmetico.git
+cd saleor-cosmetico
+./scripts/onboard-dev.sh
+```
+
+### Setup Manuale
 ```bash
 # Setup completo con un comando
 ./scripts/setup.sh
@@ -57,6 +65,12 @@ docker compose logs -f celery
 - Password sicure generate automaticamente
 - Database accessibile solo internamente
 - File sensibili ignorati da Git
+
+## 📚 Documentazione
+
+- **Sviluppatori**: [DEVELOPMENT.md](DEVELOPMENT.md)
+- **Gestione Secrets**: [.github/SECRETS_MANAGEMENT.md](.github/SECRETS_MANAGEMENT.md)
+- **Scripts**: [scripts/README.md](scripts/README.md)
 
 ## 📞 Supporto
 
