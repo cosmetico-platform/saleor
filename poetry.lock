@@ -1162,14 +1162,14 @@ files = [
 
 [[package]]
 name = "django-celery-beat"
-version = "2.8.0"
+version = "2.8.1"
 description = "Database-backed Periodic Tasks."
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "django_celery_beat-2.8.0-py3-none-any.whl", hash = "sha256:f8fd2e1ffbfa8e570ab9439383b2cd15a6642b347662d0de79c62ba6f68d4b38"},
-    {file = "django_celery_beat-2.8.0.tar.gz", hash = "sha256:955bfb3c4b8f1026a8d20144d0da39c941e1eb23acbaee9e12a7e7cc1f74959a"},
+    {file = "django_celery_beat-2.8.1-py3-none-any.whl", hash = "sha256:da2b1c6939495c05a551717509d6e3b79444e114a027f7b77bf3727c2a39d171"},
+    {file = "django_celery_beat-2.8.1.tar.gz", hash = "sha256:dfad0201c0ac50c91a34700ef8fa0a10ee098cc7f3375fe5debed79f2204f80a"},
 ]
 
 [package.dependencies]
@@ -6075,4 +6075,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "~3.12"
-content-hash = "91b197cdaab834dcd331bc84fa5391ee9288fb2d9612a8378e3f90ef4a258fc9"
+content-hash = "8ea99a233fd4db55ddd1fe2f93a0b5350c27ff5be5cf9b848f4218e23e919e8f"
