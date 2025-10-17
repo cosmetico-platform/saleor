@@ -543,7 +543,7 @@ def test_order_line_update_order_promotion(
 
     rule = order_promotion_rule
     promotion_id = graphene.Node.to_global_id("Promotion", rule.promotion_id)
-    reward_value = Decimal("25")
+    reward_value = Decimal(25)
     assert rule.reward_value == reward_value
     assert rule.reward_value_type == RewardValueType.PERCENTAGE
 
@@ -686,9 +686,7 @@ def test_order_line_update_triggers_webhooks(
     mocked_send_webhook_request_async.assert_called_once_with(
         kwargs={"event_delivery_id": order_delivery.id, "telemetry_context": ANY},
         queue=settings.ORDER_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery

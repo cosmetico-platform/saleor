@@ -1280,7 +1280,7 @@ def test_product_media_created(
         {
             "productMedia": {
                 "id": media_id,
-                "url": f"http://mirumee.com{media.image.url}",
+                "url": f"https://example.com{media.image.url}",
                 "productId": graphene.Node.to_global_id("Product", media.product_id),
             }
         }
@@ -1303,7 +1303,7 @@ def test_product_media_updated(
         {
             "productMedia": {
                 "id": media_id,
-                "url": f"http://mirumee.com{media.image.url}",
+                "url": f"https://example.com{media.image.url}",
                 "productId": graphene.Node.to_global_id("Product", media.product_id),
             }
         }
@@ -1326,7 +1326,7 @@ def test_product_media_deleted(
         {
             "productMedia": {
                 "id": media_id,
-                "url": f"http://mirumee.com{media.image.url}",
+                "url": f"https://example.com{media.image.url}",
                 "productId": graphene.Node.to_global_id("Product", media.product_id),
             }
         }
@@ -1885,8 +1885,8 @@ def test_fulfillment_with_refund_amounts(
     fulfillment, subscription_fulfillment_created_webhook
 ):
     # given
-    shipping_refund = Decimal("10")
-    total_refund = Decimal("15")
+    shipping_refund = Decimal(10)
+    total_refund = Decimal(15)
     fulfillment.shipping_refund_amount = shipping_refund
     fulfillment.total_refund_amount = total_refund
     fulfillment.save()

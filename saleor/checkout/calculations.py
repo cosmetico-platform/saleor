@@ -30,7 +30,7 @@ from ..tax.utils import (
     get_tax_calculation_strategy_for_checkout,
     normalize_tax_rate_for_db,
 )
-from . import base_calculations
+from . import CheckoutAuthorizeStatus, base_calculations
 from .fetch import find_checkout_line_info
 from .lock_objects import checkout_qs_select_for_update
 from .models import Checkout
@@ -136,9 +136,14 @@ def calculate_checkout_total_with_gift_cards(
     force_update: bool = False,
     allow_sync_webhooks: bool = True,
 ) -> "TaxedMoney":
+    """Return the total cost of the checkout taking into account gift cards total.
+
+    Gift cards total is subtracted from total gross amount and subtracted proportionally
+    from total net amount.
+    """
     if pregenerated_subscription_payloads is None:
         pregenerated_subscription_payloads = {}
-    total = checkout_total(
+    total = calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -169,7 +174,7 @@ def calculate_checkout_total_with_gift_cards(
     return total
 
 
-def checkout_total(
+def calculate_checkout_total(
     *,
     manager: "PluginsManager",
     checkout_info: "CheckoutInfo",
@@ -797,7 +802,7 @@ def fetch_checkout_data(
     """
     if pregenerated_subscription_payloads is None:
         pregenerated_subscription_payloads = {}
-    previous_total_gross = checkout_info.checkout.total.gross
+    previous_checkout_price_expiration = checkout_info.checkout.price_expiration
     checkout_info, lines = _fetch_checkout_prices_if_expired(
         checkout_info=checkout_info,
         manager=manager,
@@ -809,7 +814,26 @@ def fetch_checkout_data(
         allow_sync_webhooks=allow_sync_webhooks,
     )
     current_total_gross = checkout_info.checkout.total.gross
-    if current_total_gross != previous_total_gross or force_status_update:
+    if (
+        checkout_info.checkout.price_expiration != previous_checkout_price_expiration
+        or force_status_update
+        or (
+            # Checkout with total being zero is fully authorized therefore
+            # if authorized status was not yet updated, do it now.
+            current_total_gross == zero_money(current_total_gross.currency)
+            and checkout_info.checkout.authorize_status != CheckoutAuthorizeStatus.FULL
+            and bool(lines)
+        )
+    ):
+        current_total_gross = (
+            checkout_info.checkout.total.gross
+            - checkout_info.checkout.get_total_gift_cards_balance(
+                database_connection_name
+            )
+        )
+        current_total_gross = max(
+            current_total_gross, zero_money(current_total_gross.currency)
+        )
         update_checkout_payment_statuses(
             checkout=checkout_info.checkout,
             checkout_total_gross=current_total_gross,

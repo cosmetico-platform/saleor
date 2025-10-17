@@ -613,7 +613,7 @@ def test_order_lines_create_variant_on_promotion(
 
     variant = variant_with_many_stocks
 
-    reward_value = Decimal("5")
+    reward_value = Decimal(5)
     rule = catalogue_promotion_without_rules.rules.create(
         name="Promotion rule",
         catalogue_predicate={
@@ -725,7 +725,7 @@ def test_order_lines_create_order_promotion(
     rule = order_promotion_rule
     promotion_id = graphene.Node.to_global_id("Promotion", rule.promotion_id)
     assert rule.reward_value_type == RewardValueType.PERCENTAGE
-    assert rule.reward_value == Decimal("25")
+    assert rule.reward_value == Decimal(25)
 
     variant = variant_with_many_stocks
     quantity = 5
@@ -1347,9 +1347,7 @@ def test_order_lines_create_triggers_webhooks(
     mocked_send_webhook_request_async.assert_called_once_with(
         kwargs={"event_delivery_id": order_delivery.id, "telemetry_context": ANY},
         queue=settings.ORDER_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -2077,7 +2075,7 @@ def test_order_lines_create_dont_set_price_expiration_time_when_price_overridden
 
     variant = variant_with_many_stocks
     quantity = 1
-    custom_price = Decimal("5")
+    custom_price = Decimal(5)
     order_id = graphene.Node.to_global_id("Order", order.id)
     variant_id = graphene.Node.to_global_id("ProductVariant", variant.id)
     variables = {
@@ -2161,7 +2159,7 @@ def test_order_lines_create_existing_variant_and_custom_price_unset_expiration_d
     extra_quantity = 1
     order_id = graphene.Node.to_global_id("Order", order.id)
     variant_id = graphene.Node.to_global_id("ProductVariant", variant.id)
-    custom_price = Decimal("5")
+    custom_price = Decimal(5)
     variables = {
         "orderId": order_id,
         "variantId": variant_id,
@@ -2185,3 +2183,37 @@ def test_order_lines_create_existing_variant_and_custom_price_unset_expiration_d
     line.refresh_from_db()
     assert line.quantity == old_quantity + extra_quantity
     assert line.draft_base_price_expire_at is None
+
+
+@pytest.mark.parametrize("status", [OrderStatus.DRAFT, OrderStatus.UNCONFIRMED])
+def test_order_lines_create_sets_product_type_id_for_order_line(
+    status,
+    order,
+    permission_group_manage_orders,
+    staff_api_client,
+    variant_with_many_stocks,
+):
+    # given
+    query = ORDER_LINES_CREATE_MUTATION
+    order.status = status
+    order.save(update_fields=["status"])
+    variant = variant_with_many_stocks
+
+    quantity = 1
+    order_id = graphene.Node.to_global_id("Order", order.id)
+    variant_id = graphene.Node.to_global_id("ProductVariant", variant.id)
+    variables = {"orderId": order_id, "variantId": variant_id, "quantity": quantity}
+
+    expected_product_type_id = variant.product.product_type_id
+
+    # when
+    permission_group_manage_orders.user_set.add(staff_api_client.user)
+    response = staff_api_client.post_graphql(query, variables)
+
+    # then
+    content = get_graphql_content(response)
+    assert not content["data"]["orderLinesCreate"]["errors"]
+
+    order.refresh_from_db()
+    assert len(order.lines.all()) == 1
+    assert order.lines.first().product_type_id == expected_product_type_id

@@ -14,15 +14,18 @@ from .....order.events import transaction_event as order_transaction_event
 from .....payment import TransactionEventType
 from .....payment import models as payment_models
 from .....payment.error_codes import TransactionCreateErrorCode
+from .....payment.interface import PaymentMethodDetails
 from .....payment.transaction_item_calculations import recalculate_transaction_amounts
 from .....payment.utils import (
     create_manual_adjustment_events,
     process_order_or_checkout_with_transaction,
     truncate_transaction_event_message,
+    update_transaction_item_with_payment_method_details,
 )
 from .....permission.enums import PaymentPermissions
 from ....app.dataloaders import get_app_promise
 from ....core import ResolveInfo
+from ....core.descriptions import ADDED_IN_322
 from ....core.doc_category import DOC_CATEGORY_PAYMENTS
 from ....core.mutations import BaseMutation
 from ....core.types import BaseInputObjectType
@@ -33,6 +36,11 @@ from ...enums import TransactionActionEnum
 from ...types import TransactionItem
 from ...utils import deprecated_metadata_contains_empty_key
 from ..payment.payment_check_balance import MoneyInput
+from .shared import (
+    PaymentMethodDetailsInput,
+    get_payment_method_details,
+    validate_payment_method_details_input,
+)
 
 if TYPE_CHECKING:
     pass
@@ -42,7 +50,7 @@ class TransactionCreateInput(BaseInputObjectType):
     name = graphene.String(description="Payment name of the transaction.")
     message = graphene.String(description="The message of the transaction.")
 
-    psp_reference = graphene.String(description=("PSP Reference of the transaction. "))
+    psp_reference = graphene.String(description="PSP Reference of the transaction.")
     available_actions = graphene.List(
         graphene.NonNull(TransactionActionEnum),
         description="List of all possible actions for the transaction",
@@ -71,15 +79,18 @@ class TransactionCreateInput(BaseInputObjectType):
             "payment provider page with transaction event details."
         )
     )
+    payment_method_details = PaymentMethodDetailsInput(
+        description="Details of the payment method used for the transaction."
+        + ADDED_IN_322,
+        required=False,
+    )
 
     class Meta:
         doc_category = DOC_CATEGORY_PAYMENTS
 
 
 class TransactionEventInput(BaseInputObjectType):
-    psp_reference = graphene.String(
-        description=("PSP Reference related to this action.")
-    )
+    psp_reference = graphene.String(description="PSP Reference related to this action.")
 
     message = graphene.String(description="The message related to the event.")
 
@@ -104,7 +115,7 @@ class TransactionCreate(BaseMutation):
         )
 
     class Meta:
-        description = "Create transaction for checkout or order."
+        description = "Creates transaction for checkout or order."
         doc_category = DOC_CATEGORY_PAYMENTS
         error_type_class = common_types.TransactionCreateError
         permissions = (PaymentPermissions.HANDLE_PAYMENTS,)
@@ -249,13 +260,23 @@ class TransactionCreate(BaseMutation):
             transaction.get("external_url"),
             error_code=TransactionCreateErrorCode.INVALID.value,
         )
+        if payment_method_details := transaction.get("payment_method_details"):
+            validate_payment_method_details_input(
+                payment_method_details, TransactionCreateErrorCode
+            )
+
         if "available_actions" in transaction and not transaction["available_actions"]:
             transaction.pop("available_actions")
         return instance
 
     @classmethod
     def create_transaction(
-        cls, transaction_input: dict, user, app, save: bool = True
+        cls,
+        transaction_input: dict,
+        user,
+        app,
+        save: bool = True,
+        payment_details_data: PaymentMethodDetails | None = None,
     ) -> payment_models.TransactionItem:
         app_identifier = None
         if app and app.identifier:
@@ -273,6 +294,10 @@ class TransactionCreate(BaseMutation):
             app_identifier=app_identifier,
             app=app,
         )
+        if payment_details_data:
+            update_transaction_item_with_payment_method_details(
+                transaction, payment_details_data
+            )
         cls.cleanup_and_update_metadata_data(transaction, metadata, private_metadata)
         if save:
             transaction.save()
@@ -319,6 +344,10 @@ class TransactionCreate(BaseMutation):
         order_or_checkout_instance = cls.validate_input(
             order_or_checkout_instance, transaction=transaction
         )
+        payment_details_data: PaymentMethodDetails | None = None
+        if payment_method_details := transaction.pop("payment_method_details", None):
+            payment_details_data = get_payment_method_details(payment_method_details)
+
         transaction_data = {**transaction}
         currency = order_or_checkout_instance.currency
         transaction_data["currency"] = currency
@@ -339,7 +368,12 @@ class TransactionCreate(BaseMutation):
                     message=transaction_event.get("message", ""),
                 )
         money_data = cls.get_money_data_from_input(transaction_data, currency)
-        new_transaction = cls.create_transaction(transaction_data, user=user, app=app)
+        new_transaction = cls.create_transaction(
+            transaction_data,
+            user=user,
+            app=app,
+            payment_details_data=payment_details_data,
+        )
         if money_data:
             create_manual_adjustment_events(
                 transaction=new_transaction, money_data=money_data, user=user, app=app

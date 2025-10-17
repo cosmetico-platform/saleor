@@ -18,8 +18,9 @@ from ..actions import (
     call_checkout_events,
     call_checkout_info_event,
     transaction_amounts_for_checkout_updated,
+    transaction_amounts_for_checkout_updated_without_price_recalculation,
 )
-from ..calculations import fetch_checkout_data
+from ..calculations import calculate_checkout_total, fetch_checkout_data
 from ..fetch import fetch_checkout_info, fetch_checkout_lines
 
 
@@ -187,46 +188,6 @@ def test_transaction_amounts_for_checkout_updated_with_already_fully_paid(
 @patch("saleor.checkout.tasks.automatic_checkout_completion_task.delay")
 @patch("saleor.plugins.manager.PluginsManager.checkout_fully_paid")
 @patch("saleor.plugins.manager.PluginsManager.checkout_fully_authorized")
-def test_transaction_amounts_for_checkout_updated_0_checkout_automatic_complete(
-    mocked_fully_authorized,
-    mocked_fully_paid,
-    mocked_automatic_checkout_completion_task,
-    checkout_with_item_total_0,
-    transaction_item_generator,
-    plugins_manager,
-    app,
-    django_capture_on_commit_callbacks,
-):
-    # given
-    checkout = checkout_with_item_total_0
-    lines, _ = fetch_checkout_lines(checkout)
-    checkout_info = fetch_checkout_info(checkout, lines, plugins_manager)
-    checkout_info, _ = fetch_checkout_data(checkout_info, plugins_manager, lines)
-    transaction = transaction_item_generator(checkout_id=checkout.pk, charged_value=0)
-    channel = checkout_info.channel
-    channel.automatically_complete_fully_paid_checkouts = True
-    channel.save(update_fields=["automatically_complete_fully_paid_checkouts"])
-
-    # when
-    with django_capture_on_commit_callbacks(execute=True):
-        transaction_amounts_for_checkout_updated(
-            transaction, manager=plugins_manager, user=None, app=app
-        )
-
-    # then
-    checkout.refresh_from_db()
-    assert checkout.charge_status == CheckoutChargeStatus.FULL
-    assert checkout.authorize_status == CheckoutAuthorizeStatus.FULL
-    mocked_fully_authorized.assert_called_with(checkout, webhooks=set())
-    mocked_fully_paid.assert_called_with(checkout, webhooks=set())
-    mocked_automatic_checkout_completion_task.assert_called_once_with(
-        checkout.pk, None, app.id
-    )
-
-
-@patch("saleor.checkout.tasks.automatic_checkout_completion_task.delay")
-@patch("saleor.plugins.manager.PluginsManager.checkout_fully_paid")
-@patch("saleor.plugins.manager.PluginsManager.checkout_fully_authorized")
 def test_transaction_amounts_for_checkout_updated_with_already_fully_authorized(
     mocked_fully_paid,
     mocked_fully_authorized,
@@ -241,7 +202,9 @@ def test_transaction_amounts_for_checkout_updated_with_already_fully_authorized(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, plugins_manager)
     checkout_info, _ = fetch_checkout_data(checkout_info, plugins_manager, lines)
-    total = checkout_info.checkout.total
+    total = calculate_checkout_total(
+        manager=plugins_manager, checkout_info=checkout_info, lines=lines, address=None
+    )
 
     first_authorized_amount = total.gross.amount - 1
     second_authorized_amount = 1
@@ -410,10 +373,8 @@ def test_transaction_amounts_automatic_checkout_complete_called_once(
     "previous_modified_at",
     [None, datetime.datetime(2018, 5, 31, 12, 0, 0, tzinfo=datetime.UTC)],
 )
-@patch("saleor.plugins.manager.PluginsManager.checkout_fully_paid")
 @freeze_time("2023-05-31 12:00:01")
 def test_transaction_amounts_for_checkout_updated_updates_last_transaction_modified_at(
-    mocked_fully_paid,
     previous_modified_at,
     checkout_with_items,
     transaction_item_generator,
@@ -445,7 +406,6 @@ def test_transaction_amounts_for_checkout_updated_updates_last_transaction_modif
     # then
     checkout.refresh_from_db()
     assert checkout.last_transaction_modified_at == transaction.modified_at
-    mocked_fully_paid.assert_called_with(checkout, webhooks=set())
 
 
 def test_get_checkout_refundable_with_transaction_and_last_refund_success(
@@ -742,9 +702,7 @@ def test_call_checkout_event_triggers_sync_webhook_when_needed(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -839,9 +797,7 @@ def test_call_checkout_event_skips_tax_webhook_when_not_expired(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -960,9 +916,7 @@ def test_call_checkout_event_only_async_when_sync_missing(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.test",
     )
     assert not mocked_send_webhook_request_sync.called
     mocked_call_event_including_protected_events.assert_called_once_with(
@@ -1090,9 +1044,7 @@ def test_call_checkout_info_event_triggers_sync_webhook_when_needed(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1198,9 +1150,7 @@ def test_call_checkout_info_event_skips_tax_webhook_when_not_expired(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1291,9 +1241,7 @@ def test_call_checkout_info_event_only_async_when_sync_missing(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.test",
     )
     assert not mocked_send_webhook_request_sync.called
     mocked_call_event_including_protected_events.assert_called_once_with(
@@ -1420,9 +1368,7 @@ def test_transaction_amounts_for_checkout_fully_paid_triggers_sync_webhook(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1515,6 +1461,7 @@ def test_transaction_amounts_for_checkout_fully_authorized_triggers_sync_webhook
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, plugins_manager)
     checkout_info, _ = fetch_checkout_data(checkout_info, plugins_manager, lines)
+
     transaction = transaction_item_generator(
         checkout_id=checkout.pk,
         authorized_value=checkout_info.checkout.total.gross.amount,
@@ -1529,18 +1476,16 @@ def test_transaction_amounts_for_checkout_fully_authorized_triggers_sync_webhook
     # then
 
     # confirm that event delivery was generated for each async webhook.
-    checkout_fully_paid_delivery = EventDelivery.objects.get(
+    checkout_fully_authorized_delivery = EventDelivery.objects.get(
         webhook_id=checkout_fully_authorized_webhook.id
     )
     mocked_send_webhook_request_async.assert_called_once_with(
         kwargs={
-            "event_delivery_id": checkout_fully_paid_delivery.id,
+            "event_delivery_id": checkout_fully_authorized_delivery.id,
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1681,9 +1626,7 @@ def test_call_checkout_events_triggers_sync_webhook_when_needed(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1786,9 +1729,7 @@ def test_call_checkout_events_skips_tax_webhook_when_not_expired(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.additional",
     )
 
     # confirm each sync webhook was called without saving event delivery
@@ -1918,9 +1859,7 @@ def test_call_checkout_events_only_async_when_sync_missing(
             "telemetry_context": ANY,
         },
         queue=settings.CHECKOUT_WEBHOOK_EVENTS_CELERY_QUEUE_NAME,
-        bind=True,
-        retry_backoff=10,
-        retry_kwargs={"max_retries": 5},
+        MessageGroupId="example.com:saleor.app.test",
     )
     assert not mocked_send_webhook_request_sync.called
     mocked_call_event_including_protected_events.assert_has_calls(
@@ -1933,3 +1872,55 @@ def test_call_checkout_events_only_async_when_sync_missing(
             call(plugins_manager.checkout_updated, checkout_with_items, webhooks=set()),
         ]
     )
+
+
+@pytest.mark.parametrize(
+    ("gift_card_balance", "expected_authorize_status", "expected_charge_status"),
+    [
+        (0, CheckoutAuthorizeStatus.PARTIAL, CheckoutChargeStatus.PARTIAL),
+        (10, CheckoutAuthorizeStatus.PARTIAL, CheckoutChargeStatus.PARTIAL),
+        (20, CheckoutAuthorizeStatus.FULL, CheckoutChargeStatus.FULL),
+        (40, CheckoutAuthorizeStatus.FULL, CheckoutChargeStatus.OVERCHARGED),
+    ],
+)
+def test_transaction_amounts_for_checkout_updated_without_price_recalculation_considers_gift_cards_balance_when_updating_checkout_payment_status(
+    checkout_with_gift_card,
+    gift_card_balance,
+    expected_authorize_status,
+    expected_charge_status,
+    transaction_item_generator,
+):
+    # given
+    checkout = checkout_with_gift_card
+    gift_card = checkout.gift_cards.first()
+    gift_card.initial_balance_amount = Decimal(gift_card_balance)
+    gift_card.current_balance_amount = Decimal(gift_card_balance)
+    gift_card.save()
+
+    lines, _ = fetch_checkout_lines(checkout)
+    manager = get_plugins_manager(allow_replica=False)
+    checkout_info = fetch_checkout_info(checkout, lines, manager)
+    address = checkout.shipping_address or checkout.billing_address
+
+    assert checkout.authorize_status == CheckoutAuthorizeStatus.NONE
+    assert checkout.charge_status == CheckoutChargeStatus.NONE
+
+    transaction = transaction_item_generator(
+        checkout_id=checkout.pk,
+        charged_value=Decimal(10),
+    )
+
+    total = calculate_checkout_total(
+        manager=manager, checkout_info=checkout_info, lines=lines, address=address
+    )
+    assert total.gross.amount == Decimal(30)
+
+    # when
+    transaction_amounts_for_checkout_updated_without_price_recalculation(
+        transaction, checkout, manager, None, None
+    )
+
+    # then
+    checkout.refresh_from_db()
+    assert checkout.authorize_status == expected_authorize_status
+    assert checkout.charge_status == expected_charge_status

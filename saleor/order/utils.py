@@ -16,6 +16,7 @@ from prices import Money, TaxedMoney
 from ..account.models import User
 from ..account.utils import store_user_address
 from ..checkout import AddressType
+from ..checkout.models import Checkout
 from ..core.prices import quantize_price
 from ..core.taxes import zero_money
 from ..core.tracing import traced_atomic_transaction
@@ -318,6 +319,7 @@ def create_order_line(
         product_sku=variant.sku,
         product_variant_id=variant.get_global_id(),
         is_shipping_required=variant.is_shipping_required(),
+        product_type_id=product.product_type_id,
         is_gift_card=variant.is_gift_card(),
         quantity=quantity,
         unit_price=unit_price,
@@ -494,6 +496,13 @@ def add_gift_cards_to_order(
     ]
     GiftCard.objects.bulk_update(gift_cards_to_update, update_fields)
     gift_card_events.gift_cards_used_in_order_event(balance_data, order, user, app)
+
+    # Invalidate prices for checkouts attached to gift cards used by this order.
+    # This will ensure the checkout status gets recalculcated to accomodate gift cards
+    # balance changes.
+    Checkout.objects.filter(gift_cards__in=gift_cards_to_update).exclude(
+        token=checkout_info.checkout.token
+    ).update(price_expiration=timezone.now())
 
     gift_card_compensation = total_before_gift_card_compensation - total_price_left
     if gift_card_compensation.amount > 0:
@@ -1044,11 +1053,11 @@ def update_order_charge_status(order: Order, granted_refund_amount: Decimal):
     the order.total - order granted refund
     We treat the order as not charged when the charged amount is 0.
     """
-    total_charged = order.total_charged_amount or Decimal("0")
+    total_charged = order.total_charged_amount or Decimal(0)
     total_charged = quantize_price(total_charged, order.currency)
 
     current_total_gross = order.total_gross_amount - granted_refund_amount
-    current_total_gross = max(current_total_gross, Decimal("0"))
+    current_total_gross = max(current_total_gross, Decimal(0))
     current_total_gross = quantize_price(current_total_gross, order.currency)
 
     if total_charged == current_total_gross:
@@ -1125,7 +1134,7 @@ def update_order_authorize_status(order: Order, granted_refund_amount: Decimal):
     ) or Decimal(0)
     total_covered = quantize_price(total_covered, order.currency)
     current_total_gross = order.total_gross_amount - granted_refund_amount
-    current_total_gross = max(current_total_gross, Decimal("0"))
+    current_total_gross = max(current_total_gross, Decimal(0))
     current_total_gross = quantize_price(current_total_gross, order.currency)
 
     if total_covered == Decimal(0) and order.total.gross.amount == Decimal(0):

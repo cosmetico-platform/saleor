@@ -26,63 +26,176 @@ PRODUCT_VARIANT_BULK_UPDATE_MUTATION = """
         $errorPolicy: ErrorPolicyEnum
     ) {
         productVariantBulkUpdate(
-            variants: $variants, product: $productId, errorPolicy: $errorPolicy
-            ) {
-                results{
-                    errors {
-                        field
-                        path
-                        message
-                        code
-                        warehouses
-                        channels
-                    }
-                    productVariant{
-                        metadata {
-                            key
-                            value
-                        }
-                        id
-                        name
-                        sku
-                        stocks {
-                            warehouse {
-                                slug
-                            }
-                            quantity
-                        }
-                        channelListings {
-                            channel {
-                                slug
-                            }
-                            price {
-                                currency
-                                amount
-                            }
-                            costPrice {
-                                currency
-                                amount
-                            }
-                            priorPrice {
-                                currency
-                                amount
-                            }
-                            preorderThreshold {
-                                quantity
-                            }
-                        }
-                        preorder {
-                            globalThreshold
-                            endDate
-                        }
-                    }
-                }
-                count
-                errors{
+            variants: $variants,
+            product: $productId,
+            errorPolicy: $errorPolicy
+        ) {
+            results {
+                errors {
                     field
+                    path
                     message
                     code
+                    warehouses
+                    channels
                 }
+                productVariant {
+                    metadata {
+                        key
+                        value
+                    }
+                    id
+                    name
+                    sku
+                    stocks {
+                        warehouse {
+                            slug
+                        }
+                        quantity
+                    }
+                    channelListings {
+                        channel {
+                            slug
+                        }
+                        price {
+                            currency
+                            amount
+                        }
+                        costPrice {
+                            currency
+                            amount
+                        }
+                        priorPrice {
+                            currency
+                            amount
+                        }
+                        preorderThreshold {
+                            quantity
+                        }
+                    }
+                    attributes {
+                        attribute {
+                            slug
+                        }
+                        values {
+                            value
+                            reference
+                        }
+                    }
+                    assignedAttributes(limit: 10) {
+                        attribute {
+                            slug
+                        }
+                        ... on AssignedNumericAttribute {
+                            value
+                        }
+                        ... on AssignedTextAttribute {
+                            text: value
+                        }
+                        ... on AssignedPlainTextAttribute {
+                            plain_text: value
+                        }
+                        ... on AssignedFileAttribute {
+                            file: value {
+                                contentType
+                                url
+                            }
+                        }
+                        ... on AssignedMultiPageReferenceAttribute {
+                            pages: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedMultiProductReferenceAttribute {
+                            products: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedMultiCategoryReferenceAttribute {
+                            categories: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedMultiCollectionReferenceAttribute {
+                            collections: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedSinglePageReferenceAttribute {
+                            page: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedSingleProductReferenceAttribute {
+                            product: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedSingleProductVariantReferenceAttribute {
+                            variant: value {
+                                sku
+                            }
+                        }
+                        ... on AssignedSingleCategoryReferenceAttribute {
+                            category: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedSingleCollectionReferenceAttribute {
+                            collection: value {
+                                slug
+                            }
+                        }
+                        ... on AssignedMultiProductVariantReferenceAttribute {
+                            variants: value {
+                                sku
+                            }
+                        }
+                        ... on AssignedSingleChoiceAttribute {
+                            choice: value {
+                                name
+                                slug
+                            }
+                        }
+                        ... on AssignedMultiChoiceAttribute {
+                            multi: value {
+                                name
+                                slug
+                            }
+                        }
+                        ... on AssignedSwatchAttribute {
+                            swatch: value {
+                                name
+                                slug
+                                hexColor
+                                file {
+                                    url
+                                    contentType
+                                }
+                            }
+                        }
+                        ... on AssignedBooleanAttribute {
+                            bool: value
+                        }
+                        ... on AssignedDateAttribute {
+                            date: value
+                        }
+                        ... on AssignedDateTimeAttribute {
+                            datetime: value
+                        }
+                    }
+                    preorder {
+                        globalThreshold
+                        endDate
+                    }
+                }
+            }
+            count
+            errors {
+                field
+                message
+                code
+            }
         }
     }
 """
@@ -804,67 +917,199 @@ def test_product_variant_bulk_update_attributes(
         assert rule.variants_dirty
 
 
-@patch(
-    "saleor.graphql.product.bulk_mutations."
-    "product_variant_bulk_update.get_webhooks_for_event"
-)
-def test_product_variant_bulk_update_attributes_by_external_reference(
-    mocked_get_webhooks_for_event,
+def test_product_variant_bulk_update_with_ref_attributes_and_reference_types_defined(
     staff_api_client,
-    variant_with_many_stocks,
+    product,
+    product_type,
+    product_type_page_single_reference_attribute,
+    product_type_product_reference_attribute,
+    product_type_variant_reference_attribute,
+    page,
+    variant,
     permission_manage_products,
-    any_webhook,
-    settings,
-    multiselect_attribute,
-    color_attribute,
 ):
     # given
-    mocked_get_webhooks_for_event.return_value = [any_webhook]
-    settings.PLUGINS = ["saleor.plugins.webhook.plugin.WebhookPlugin"]
+    product_type.variant_attributes.clear()
+    product_type.variant_attributes.add(
+        product_type_page_single_reference_attribute,
+        product_type_product_reference_attribute,
+        product_type_variant_reference_attribute,
+    )
 
-    variant = variant_with_many_stocks
-    product_id = graphene.Node.to_global_id("Product", variant.product_id)
+    product_type_page_single_reference_attribute.reference_page_types.add(
+        page.page_type
+    )
+    product_type_product_reference_attribute.reference_product_types.add(
+        product.product_type
+    )
+    product_type_variant_reference_attribute.reference_product_types.add(
+        variant.product.product_type
+    )
+
+    page_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_page_single_reference_attribute.id
+    )
+    product_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_product_reference_attribute.id
+    )
+    variant_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_variant_reference_attribute.id
+    )
+    page_ref = graphene.Node.to_global_id("Page", page.pk)
+    product_ref = graphene.Node.to_global_id("Product", product.pk)
+    variant_ref = graphene.Node.to_global_id("ProductVariant", variant.pk)
+
+    product_id = graphene.Node.to_global_id("Product", product.pk)
     variant_id = graphene.Node.to_global_id("ProductVariant", variant.pk)
-
-    product = variant.product
-    product.product_type.variant_attributes.add(color_attribute)
-    attribute_external_ref = color_attribute.external_reference
-
-    value_external_ref = "value-external-ref"
-    attribute_value = color_attribute.values.last()
-    attribute_value.external_reference = value_external_ref
-    attribute_value.save(update_fields=["external_reference"])
 
     variants = [
         {
             "id": variant_id,
-            "attributes": [
-                {
-                    "externalReference": attribute_external_ref,
-                    "dropdown": {
-                        "externalReference": value_external_ref,
-                        "value": attribute_value.name,
-                    },
-                }
-            ],
-        }
+            "attributes": [{"id": page_ref_attr_id, "reference": page_ref}],
+        },
+        {
+            "id": variant_id,
+            "attributes": [{"id": product_ref_attr_id, "references": [product_ref]}],
+        },
+        {
+            "id": variant_id,
+            "attributes": [{"id": variant_ref_attr_id, "references": [variant_ref]}],
+        },
     ]
-
-    variables = {"productId": product_id, "variants": variants}
 
     # when
     staff_api_client.user.user_permissions.add(permission_manage_products)
     response = staff_api_client.post_graphql(
-        PRODUCT_VARIANT_BULK_UPDATE_MUTATION, variables
+        PRODUCT_VARIANT_BULK_UPDATE_MUTATION,
+        {"productId": product_id, "variants": variants},
     )
     content = get_graphql_content(response)
     data = content["data"]["productVariantBulkUpdate"]
 
     # then
     assert not data["results"][0]["errors"]
-    assert data["count"] == 1
-    for rule in get_active_catalogue_promotion_rules():
-        assert rule.variants_dirty
+    assert not data["results"][1]["errors"]
+    assert not data["results"][2]["errors"]
+    assert data["count"] == 3
+
+    expected_attributes = [
+        {
+            "attribute": {"slug": product_type_page_single_reference_attribute.slug},
+            "values": [{"reference": page_ref, "value": ""}],
+        },
+        {
+            "attribute": {"slug": product_type_product_reference_attribute.slug},
+            "values": [{"reference": product_ref, "value": ""}],
+        },
+        {
+            "attribute": {"slug": product_type_variant_reference_attribute.slug},
+            "values": [{"reference": variant_ref, "value": ""}],
+        },
+    ]
+    expected_assigned_attributes = [
+        {
+            "attribute": {"slug": product_type_page_single_reference_attribute.slug},
+            "page": {"slug": page.slug},
+        },
+        {
+            "attribute": {"slug": product_type_product_reference_attribute.slug},
+            "products": [{"slug": product.slug}],
+        },
+        {
+            "attribute": {"slug": product_type_variant_reference_attribute.slug},
+            "variants": [{"sku": variant.sku}],
+        },
+    ]
+
+    for i, result in enumerate(data["results"]):
+        assert expected_attributes[i] in result["productVariant"]["attributes"]
+        assert (
+            expected_assigned_attributes[i]
+            in result["productVariant"]["assignedAttributes"]
+        )
+
+
+def test_product_variant_bulk_update_with_ref_attributes__refs_not_in_available_choices(
+    staff_api_client,
+    product,
+    product_type,
+    product_type_page_single_reference_attribute,
+    product_type_product_reference_attribute,
+    product_type_variant_reference_attribute,
+    page,
+    variant,
+    permission_manage_products,
+    product_type_with_variant_attributes,
+    page_type_list,
+):
+    # given
+    product_type.variant_attributes.clear()
+    product_type.variant_attributes.add(
+        product_type_page_single_reference_attribute,
+        product_type_product_reference_attribute,
+        product_type_variant_reference_attribute,
+    )
+
+    product_type_page_single_reference_attribute.reference_page_types.add(
+        page_type_list[1]
+    )
+    product_type_product_reference_attribute.reference_product_types.add(
+        product_type_with_variant_attributes
+    )
+    product_type_variant_reference_attribute.reference_product_types.add(
+        product_type_with_variant_attributes
+    )
+
+    page_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_page_single_reference_attribute.id
+    )
+    product_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_product_reference_attribute.id
+    )
+    variant_ref_attr_id = graphene.Node.to_global_id(
+        "Attribute", product_type_variant_reference_attribute.id
+    )
+    page_ref = graphene.Node.to_global_id("Page", page.pk)
+    product_ref = graphene.Node.to_global_id("Product", product.pk)
+    variant_ref = graphene.Node.to_global_id("ProductVariant", variant.pk)
+
+    product_id = graphene.Node.to_global_id("Product", product.pk)
+    variant_id = graphene.Node.to_global_id("ProductVariant", variant.pk)
+
+    variants = [
+        {
+            "id": variant_id,
+            "attributes": [{"id": page_ref_attr_id, "reference": page_ref}],
+        },
+        {
+            "id": variant_id,
+            "attributes": [{"id": product_ref_attr_id, "references": [product_ref]}],
+        },
+        {
+            "id": variant_id,
+            "attributes": [{"id": variant_ref_attr_id, "references": [variant_ref]}],
+        },
+    ]
+
+    # when
+    staff_api_client.user.user_permissions.add(permission_manage_products)
+    response = staff_api_client.post_graphql(
+        PRODUCT_VARIANT_BULK_UPDATE_MUTATION,
+        {"productId": product_id, "variants": variants},
+    )
+    content = get_graphql_content(response)
+    data = content["data"]["productVariantBulkUpdate"]
+
+    # then
+    assert len(data["results"][0]["errors"]) == 1
+    assert len(data["results"][1]["errors"]) == 1
+    assert len(data["results"][2]["errors"]) == 1
+    assert data["count"] == 0
+
+    for result in data["results"]:
+        assert len(result["errors"]) == 1
+        assert result["errors"][0]["code"] == ProductVariantBulkErrorCode.INVALID.name
+        assert result["errors"][0]["path"] == "attributes"
 
 
 @override_settings(ENABLE_LIMITING_WEBHOOKS_FOR_IDENTICAL_PAYLOADS=True)

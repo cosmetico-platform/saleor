@@ -6,9 +6,10 @@ from .....core.tracing import traced_atomic_transaction
 from .....permission.enums import ProductPermissions
 from .....product import models
 from ....attribute.types import AttributeValueInput
-from ....attribute.utils import AttrValuesInput, ProductAttributeAssignmentMixin
-from ....channel import ChannelContext
+from ....attribute.utils.attribute_assignment import AttributeAssignmentMixin
+from ....attribute.utils.shared import AttrValuesInput
 from ....core import ResolveInfo
+from ....core.context import ChannelContext
 from ....core.descriptions import (
     DEPRECATED_IN_3X_INPUT,
     RICH_CONTENT,
@@ -159,10 +160,8 @@ class ProductCreate(DeprecatedModelMutation):
         if attributes and product_type:
             try:
                 attributes_qs = product_type.product_attributes.all()
-                cleaned_input["attributes"] = (
-                    ProductAttributeAssignmentMixin.clean_input(
-                        attributes, attributes_qs
-                    )
+                cleaned_input["attributes"] = AttributeAssignmentMixin.clean_input(
+                    attributes, attributes_qs
                 )
             except ValidationError as e:
                 raise ValidationError({"attributes": e}) from e
@@ -174,7 +173,7 @@ class ProductCreate(DeprecatedModelMutation):
             instance.save()
             attributes = cleaned_input.get("attributes")
             if attributes:
-                ProductAttributeAssignmentMixin.save(instance, attributes)
+                AttributeAssignmentMixin.save(instance, attributes)
 
     @classmethod
     def _save_m2m(cls, _info: ResolveInfo, instance, cleaned_data):

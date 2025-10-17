@@ -41,7 +41,7 @@ from ..graphql.checkout.utils import (
     prepare_insufficient_stock_checkout_validation_error,
 )
 from ..order import OrderOrigin, OrderStatus
-from ..order.actions import mark_order_as_paid_with_payment, order_created
+from ..order.actions import order_created
 from ..order.fetch import OrderInfo, OrderLineInfo
 from ..order.models import Order, OrderLine
 from ..order.notifications import send_order_confirmation
@@ -373,6 +373,7 @@ def _create_line_for_order(
         translated_variant_name=translated_variant_name,
         product_sku=variant.sku,
         product_variant_id=variant.get_global_id(),
+        product_type_id=checkout_line_info.product.product_type_id,
         is_shipping_required=variant.is_shipping_required(),
         is_gift_card=variant.is_gift_card(),
         quantity=quantity,
@@ -729,7 +730,7 @@ def _prepare_order_data(
 
     order_data.update(_process_voucher_data_for_order(checkout_info))
 
-    order_data["total_price_left"] = calculations.checkout_total(
+    order_data["total_price_left"] = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -1200,14 +1201,6 @@ def complete_checkout_post_payment_part(
             )
             raise ValidationError(code=e.code, message=e.message) from e
 
-        # if the order total value is 0 it is paid from the definition
-        if order.total.net.amount == 0:
-            if (
-                order.channel.order_mark_as_paid_strategy
-                == MarkAsPaidStrategy.PAYMENT_FLOW
-            ):
-                mark_order_as_paid_with_payment(order, user, app, manager)
-
     return order, action_required, action_data
 
 
@@ -1529,7 +1522,7 @@ def _create_order_from_checkout(
     )
 
     # giftcards
-    total_without_giftcard = calculations.checkout_total(
+    total_without_giftcard = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=checkout_lines_info,

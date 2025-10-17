@@ -653,7 +653,7 @@ class DeprecatedModelMutation(BaseMutation):
         abstract = True
 
     @classmethod
-    def __init_subclass_with_meta__(
+    def __init_subclass_with_meta__(  # type: ignore[override]
         cls,
         arguments=None,
         model=None,
@@ -736,7 +736,7 @@ class DeprecatedModelMutation(BaseMutation):
                 # handle uploaded files
                 elif value is not None and is_upload_field(field_item):
                     value = info.context.FILES.get(value)
-                    cleaned_input[field_name] = value
+                    cleaned_input[field_name] = value  # type: ignore[assignment]
 
                 # handle other fields
                 else:
@@ -1004,7 +1004,7 @@ class BaseBulkMutation(BaseMutation):
         abstract = True
 
     @classmethod
-    def __init_subclass_with_meta__(
+    def __init_subclass_with_meta__(  # type: ignore[override]
         cls, model=None, object_type=None, _meta=None, **kwargs
     ):
         if not model:

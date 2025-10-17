@@ -8,8 +8,9 @@ from ....page import models
 from ....permission.enums import PagePermissions
 from ....product.lock_objects import product_qs_select_for_update
 from ....product.models import Product
-from ...attribute.utils import PageAttributeAssignmentMixin
+from ...attribute.utils.attribute_assignment import AttributeAssignmentMixin
 from ...core import ResolveInfo
+from ...core.context import ChannelContext
 from ...core.types import PageError
 from ...plugins.dataloaders import get_plugin_manager_promise
 from ..types import Page
@@ -37,7 +38,7 @@ class PageUpdate(PageCreate):
     @classmethod
     def clean_attributes(cls, attributes: list[dict], page_type: models.PageType):
         attributes_qs = page_type.page_attributes.prefetch_related("values")
-        cleaned_attributes = PageAttributeAssignmentMixin.clean_input(
+        cleaned_attributes = AttributeAssignmentMixin.clean_input(
             attributes, attributes_qs, creation=False, is_page_attributes=True
         )
         return cleaned_attributes
@@ -78,3 +79,9 @@ class PageUpdate(PageCreate):
                 .values_list("id", flat=True)
             )
             Product.objects.filter(id__in=locked_ids).update(search_index_dirty=True)
+
+    @classmethod
+    def success_response(cls, instance):
+        response = super().success_response(instance)
+        response.page = ChannelContext(instance, channel_slug=None)
+        return response

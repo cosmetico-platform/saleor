@@ -1,5 +1,7 @@
 from graphql import DEFAULT_DEPRECATION_REASON as DEFAULT_DEPRECATION_REASON
 
+from .const import DEFAULT_NESTED_LIST_LIMIT
+
 # Deprecation message for input fields and query arguments. Use it, when
 # deprecation message needs to be included in the field description.
 DEPRECATED_IN_3X_INPUT = "\n\nDEPRECATED: this field will be removed."
@@ -12,6 +14,7 @@ ADDED_IN_318 = "\n\nAdded in Saleor 3.18."
 ADDED_IN_319 = "\n\nAdded in Saleor 3.19."
 ADDED_IN_320 = "\n\nAdded in Saleor 3.20."
 ADDED_IN_321 = "\n\nAdded in Saleor 3.21."
+ADDED_IN_322 = "\n\nAdded in Saleor 3.22."
 
 
 PREVIEW_FEATURE = (
@@ -25,3 +28,8 @@ CHANNEL_REQUIRED = (
 )
 
 RICH_CONTENT = "\n\nRich text format. For reference see https://editorjs.io/"
+
+NESTED_QUERY_LIMIT_DESCRIPTION = (
+    "Maximum number of objects to return. "
+    f"Value must be greater than 0. Default is {DEFAULT_NESTED_LIST_LIMIT}."
+)

@@ -1,0 +1,99 @@
+services:
+  # Saleor API Backend
+  saleor:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Database
+      - DATABASE_URL=postgres://saleor:${DB_PASSWORD}@db:5432/saleor
+      # Production settings
+      - DEBUG=${DEBUG}
+      - INTERNAL_IPS=127.0.0.1
+      - PLAYGROUND_ENABLED=${PLAYGROUND_ENABLED}
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - saleor_media:/app/media
+      - saleor_static:/app/static
+      - ./secrets/jwt_rsa:/app/keys/rsa_private_key:ro
+      - ./secrets/jwt_rsa.pub:/app/keys/rsa_public_key:ro
+    # Il comando è ora gestito dallo script init.sh
+
+  # Saleor Dashboard
+  dashboard:
+    image: ghcr.io/saleor/saleor-dashboard:3.20.5
+    restart: unless-stopped
+    ports:
+      - "9000:80"
+    environment:
+      - NEXT_PUBLIC_SALEOR_API_URL=https://saleor-api.vitoesposito.it/graphql/
+      - NEXT_PUBLIC_SALEOR_WS_URL=wss://saleor-api.vitoesposito.it/graphql/
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saleor
+      POSTGRES_USER: saleor
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis per Celery
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+  # Celery Worker
+  celery:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://saleor:${DB_PASSWORD}@db:5432/saleor
+      - DEBUG=${DEBUG}
+    depends_on:
+      - db
+      - redis
+    command: ["/load-keys.sh", "celery", "-A", "saleor", "worker", "--loglevel=info"]
+    volumes:
+      - saleor_media:/app/media
+      - ./secrets/jwt_rsa:/app/keys/rsa_private_key:ro
+      - ./secrets/jwt_rsa.pub:/app/keys/rsa_public_key:ro
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://saleor:${DB_PASSWORD}@db:5432/saleor
+      - DEBUG=${DEBUG}
+    depends_on:
+      - db
+      - redis
+    command: ["/load-keys.sh", "celery", "-A", "saleor", "beat", "--loglevel=info"]
+    volumes:
+      - saleor_media:/app/media
+      - ./secrets/jwt_rsa:/app/keys/rsa_private_key:ro
+      - ./secrets/jwt_rsa.pub:/app/keys/rsa_public_key:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  saleor_media:
+  saleor_static:

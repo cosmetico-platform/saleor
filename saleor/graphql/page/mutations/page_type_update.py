@@ -35,7 +35,7 @@ class PageTypeUpdate(PageTypeMixin, DeprecatedModelMutation):
         )
 
     class Meta:
-        description = "Update page type."
+        description = "Updates page type."
         model = models.PageType
         object_type = PageType
         permissions = (PageTypePermissions.MANAGE_PAGE_TYPES_AND_ATTRIBUTES,)
@@ -58,7 +58,7 @@ class PageTypeUpdate(PageTypeMixin, DeprecatedModelMutation):
                 instance, "name", cleaned_input
             )
         except ValidationError as error:
-            error.code = PageErrorCode.REQUIRED
+            error.code = PageErrorCode.REQUIRED.value
             errors["slug"].append(error)
 
         add_attributes = cleaned_input.get("add_attributes")

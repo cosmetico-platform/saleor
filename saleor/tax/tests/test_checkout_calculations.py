@@ -52,7 +52,7 @@ def _enable_flat_rates(
         ("30.00", "36.00", "12.00", "20", "24.00"),  # tax rate = 20%
     ],
 )
-@mock.patch("saleor.checkout.calculations.checkout_total")
+@mock.patch("saleor.checkout.calculations.calculate_checkout_total")
 def test_calculate_checkout_total_with_gift_cards(
     checkout_total_mock,
     checkout_total_net,
@@ -939,7 +939,7 @@ def test_calculate_checkout_line_total_with_voucher_multiple_lines(
     checkout.shipping_address = address
     checkout.shipping_method_name = method.name
     checkout.shipping_method = method
-    discount_amount = Decimal("5")
+    discount_amount = Decimal(5)
     checkout.discount_amount = discount_amount
     checkout.voucher_code = voucher.code
     checkout.save()
@@ -1011,7 +1011,7 @@ def test_calculate_checkout_line_total_with_voucher_multiple_lines_last_line(
     checkout.shipping_address = address
     checkout.shipping_method_name = method.name
     checkout.shipping_method = method
-    discount_amount = Decimal("5")
+    discount_amount = Decimal(5)
     checkout.discount_amount = discount_amount
     checkout.voucher_code = voucher.code
     checkout.save()
@@ -1108,7 +1108,7 @@ def test_calculate_checkout_line_total_with_voucher_for_multiple_lines(
     checkout.shipping_address = address
     checkout.shipping_method_name = method.name
     checkout.shipping_method = method
-    discount_amount = Decimal("3")
+    discount_amount = Decimal(3)
     checkout.discount_amount = discount_amount
     checkout.voucher_code = voucher.code
     checkout.save()
@@ -1183,7 +1183,7 @@ def test_calculate_checkout_line_total_with_shipping_voucher(
     checkout.shipping_address = address
     checkout.shipping_method_name = method.name
     checkout.shipping_method = method
-    checkout.discount_amount = Decimal("5")
+    checkout.discount_amount = Decimal(5)
     checkout.voucher_code = voucher_shipping_type.code
     checkout.save()
 

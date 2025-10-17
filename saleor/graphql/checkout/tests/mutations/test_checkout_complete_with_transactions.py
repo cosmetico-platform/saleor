@@ -156,11 +156,12 @@ def prepare_checkout_for_test(
         ],
     )
     recalculate_transaction_amounts(transaction)
-    update_checkout_payment_statuses(
-        checkout=checkout_info.checkout,
-        checkout_total_gross=total.gross,
-        checkout_has_lines=bool(lines),
-    )
+
+    # Set price expiration to force payment status recalculcation upon fetching checkout
+    # data.
+    checkout.price_expiration = timezone.now()
+    checkout.save()
+
     return checkout
 
 
@@ -337,6 +338,7 @@ def test_checkout_with_authorized(
     transaction_item_generator,
     address,
     shipping_method,
+    customer_user,
 ):
     # given
     checkout = checkout_with_gift_card
@@ -348,8 +350,11 @@ def test_checkout_with_authorized(
         items={"accepted": "false"}
     )
     checkout.tax_exemption = True
+    checkout.user = customer_user
     checkout.save()
     checkout.metadata_storage.save()
+
+    user_number_of_orders = customer_user.number_of_orders
 
     checkout_line = checkout.lines.first()
     checkout_line_quantity = checkout_line.quantity
@@ -436,6 +441,9 @@ def test_checkout_with_authorized(
     assert not Checkout.objects.filter()
     assert not len(Reservation.objects.all())
 
+    customer_user.refresh_from_db()
+    assert customer_user.number_of_orders == user_number_of_orders + 1
+
 
 def test_checkout_with_charged(
     user_api_client,
@@ -444,6 +452,7 @@ def test_checkout_with_charged(
     transaction_item_generator,
     address,
     shipping_method,
+    customer_user,
 ):
     # given
     checkout = checkout_with_gift_card
@@ -455,8 +464,11 @@ def test_checkout_with_charged(
         items={"accepted": "false"}
     )
     checkout.tax_exemption = True
+    checkout.user = customer_user
     checkout.save()
     checkout.metadata_storage.save()
+
+    user_number_of_orders = customer_user.number_of_orders
 
     checkout_line = checkout.lines.first()
     checkout_line_quantity = checkout_line.quantity
@@ -536,6 +548,9 @@ def test_checkout_with_charged(
 
     assert not Checkout.objects.filter()
     assert not len(Reservation.objects.all())
+
+    customer_user.refresh_from_db()
+    assert customer_user.number_of_orders == user_number_of_orders + 1
 
 
 def test_checkout_price_override(
@@ -669,10 +684,10 @@ def test_checkout_paid_with_multiple_transactions(
     )
 
     transaction = transaction_item_generator(
-        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal("10")
+        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal(10)
     )
     second_transaction = transaction_item_generator(
-        checkout_id=checkout.pk, charged_value=Decimal("10")
+        checkout_id=checkout.pk, charged_value=Decimal(10)
     )
 
     update_checkout_payment_statuses(
@@ -732,7 +747,7 @@ def test_checkout_partially_paid(
     )
 
     transaction_item_generator(
-        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal("10")
+        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal(10)
     )
 
     update_checkout_payment_statuses(
@@ -785,7 +800,7 @@ def test_checkout_partially_paid_allow_unpaid_order(
     )
 
     transaction = transaction_item_generator(
-        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal("10")
+        checkout_id=checkout.pk, charged_value=total.gross.amount - Decimal(10)
     )
 
     update_checkout_payment_statuses(
@@ -1009,6 +1024,16 @@ def test_checkout_with_voucher_not_applicable(
         transaction_item_generator,
         transaction_events_generator,
     )
+
+    manager = get_plugins_manager(allow_replica=False)
+    lines, _ = fetch_checkout_lines(checkout)
+    checkout_info = fetch_checkout_info(checkout, lines, manager)
+    calculations.fetch_checkout_data(
+        checkout_info,
+        manager,
+        lines,
+    )
+
     Voucher.objects.all().delete()
 
     redirect_url = "https://www.example.com"
@@ -1044,6 +1069,16 @@ def test_checkout_with_voucher_inactive_code(
         transaction_item_generator,
         transaction_events_generator,
     )
+
+    manager = get_plugins_manager(allow_replica=False)
+    lines, _ = fetch_checkout_lines(checkout)
+    checkout_info = fetch_checkout_info(checkout, lines, manager)
+    calculations.fetch_checkout_data(
+        checkout_info,
+        manager,
+        lines,
+    )
+
     code.is_active = False
     code.save(update_fields=["is_active"])
 
@@ -1078,11 +1113,11 @@ def test_checkout_with_insufficient_stock(
         transaction_item_generator,
         transaction_events_generator,
     )
+
     checkout_line = checkout.lines.first()
     stock = Stock.objects.get(product_variant=checkout_line.variant)
-    quantity_available = get_available_quantity_for_stock(stock)
-    checkout_line.quantity = quantity_available + 1
-    checkout_line.save()
+    stock.quantity = 0
+    stock.save(update_fields=["quantity"])
 
     redirect_url = "https://www.example.com"
     variables = {"id": to_global_id_or_none(checkout), "redirectUrl": redirect_url}
@@ -1794,7 +1829,7 @@ def test_checkout_complete_with_shipping_voucher_and_gift_card(
     shipping_listing = shipping_method.channel_listings.get(
         channel_id=checkout_with_gift_card.channel_id
     )
-    shipping_listing.price_amount = Decimal("35")
+    shipping_listing.price_amount = Decimal(35)
     shipping_listing.save(update_fields=["price_amount"])
 
     checkout = prepare_checkout_for_test(
@@ -2008,7 +2043,7 @@ def test_checkout_with_voucher_complete(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
@@ -2104,7 +2139,7 @@ def test_checkout_with_order_promotion_complete(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
@@ -2168,7 +2203,7 @@ def test_checkout_complete_with_entire_order_voucher_paid_with_gift_card_and_tra
     shipping_listing = shipping_method.channel_listings.get(
         channel_id=checkout_with_voucher_percentage.channel_id
     )
-    shipping_listing.price_amount = Decimal("35")
+    shipping_listing.price_amount = Decimal(35)
     shipping_listing.save(update_fields=["price_amount"])
 
     checkout = prepare_checkout_for_test(
@@ -2294,12 +2329,12 @@ def test_checkout_complete_with_voucher_paid_with_gift_card(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total_without_gc = calculations.checkout_total(
+    total_without_gc = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
-    gift_card.initial_balance_amount = total_without_gc.gross.amount + Decimal("1")
-    gift_card.current_balance_amount = total_without_gc.gross.amount + Decimal("1")
+    gift_card.initial_balance_amount = total_without_gc.gross.amount + Decimal(1)
+    gift_card.current_balance_amount = total_without_gc.gross.amount + Decimal(1)
     gift_card.save()
 
     expected_gc_balance_amount = (
@@ -2370,7 +2405,7 @@ def test_checkout_complete_with_voucher_paid_with_gift_card(
         "expected_voucher_discount_value",
     ),
     [
-        (True, DiscountValueType.FIXED, Decimal("1")),
+        (True, DiscountValueType.FIXED, Decimal(1)),
         (False, DiscountValueType.PERCENTAGE, Decimal(10)),
     ],
 )
@@ -2425,7 +2460,7 @@ def test_checkout_complete_with_voucher_apply_once_per_order(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
@@ -2496,7 +2531,7 @@ def test_checkout_complete_with_voucher_apply_once_per_order_and_gift_card(
     shipping_listing = shipping_method.channel_listings.get(
         channel_id=checkout.channel_id
     )
-    shipping_listing.price_amount = Decimal("35")
+    shipping_listing.price_amount = Decimal(35)
     shipping_listing.save(update_fields=["price_amount"])
 
     code = voucher_percentage.codes.first()
@@ -2625,7 +2660,7 @@ def test_checkout_complete_with_voucher_single_use(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
@@ -2688,7 +2723,7 @@ def test_checkout_complete_with_shipping_voucher(
     shipping_listing = shipping_method.channel_listings.get(
         channel_id=checkout.channel_id
     )
-    shipping_listing.price_amount = Decimal("35")
+    shipping_listing.price_amount = Decimal(35)
     shipping_listing.save(update_fields=["price_amount"])
     checkout.discount = shipping_listing.price
     checkout.save(update_fields=["discount_amount"])
@@ -2820,7 +2855,7 @@ def test_checkout_with_voucher_complete_product_on_sale(
     checkout_line_variant = checkout_line.variant
 
     channel = checkout.channel
-    reward_value = Decimal("5")
+    reward_value = Decimal(5)
     rule = catalogue_promotion_without_rules.rules.create(
         catalogue_predicate={
             "productPredicate": {
@@ -2867,7 +2902,7 @@ def test_checkout_with_voucher_complete_product_on_sale(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -2924,7 +2959,7 @@ def test_checkout_with_voucher_complete_product_on_sale(
         "expected_voucher_discount_value",
     ),
     [
-        (True, DiscountValueType.FIXED, Decimal("3")),
+        (True, DiscountValueType.FIXED, Decimal(3)),
         (False, DiscountValueType.PERCENTAGE, Decimal(10)),
     ],
 )
@@ -2966,7 +3001,7 @@ def test_checkout_with_voucher_on_specific_product_complete(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager, checkout_info=checkout_info, lines=lines, address=address
     )
 
@@ -3038,7 +3073,7 @@ def test_checkout_complete_with_voucher_on_specific_product_and_gift_card(
     shipping_listing = shipping_method.channel_listings.get(
         channel_id=checkout_with_item_and_voucher_specific_products.channel_id
     )
-    shipping_listing.price_amount = Decimal("35")
+    shipping_listing.price_amount = Decimal(35)
     shipping_listing.save(update_fields=["price_amount"])
 
     checkout = prepare_checkout_for_test(
@@ -3153,7 +3188,7 @@ def test_checkout_complete_product_on_promotion(
 
     channel = checkout.channel
 
-    reward_value = Decimal("5")
+    reward_value = Decimal(5)
     rule = catalogue_promotion_without_rules.rules.create(
         catalogue_predicate={
             "productPredicate": {
@@ -3196,7 +3231,7 @@ def test_checkout_complete_product_on_promotion(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -3261,8 +3296,8 @@ def test_checkout_complete_multiple_rules_applied(
 
     channel = checkout.channel
 
-    reward_value_1 = Decimal("2")
-    reward_value_2 = Decimal("10")
+    reward_value_1 = Decimal(2)
+    reward_value_2 = Decimal(10)
     rule_1, rule_2 = PromotionRule.objects.bulk_create(
         [
             PromotionRule(
@@ -3353,7 +3388,7 @@ def test_checkout_complete_multiple_rules_applied(
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -3402,7 +3437,7 @@ def test_checkout_complete_multiple_rules_applied(
         "expected_voucher_discount_value",
     ),
     [
-        (True, DiscountValueType.FIXED, Decimal("3")),
+        (True, DiscountValueType.FIXED, Decimal(3)),
         (False, DiscountValueType.PERCENTAGE, Decimal(10)),
     ],
 )
@@ -3463,7 +3498,7 @@ def test_checkout_with_voucher_on_specific_product_complete_with_product_on_prom
     lines, _ = fetch_checkout_lines(checkout)
     checkout_info = fetch_checkout_info(checkout, lines, manager)
 
-    total = calculations.checkout_total(
+    total = calculations.calculate_checkout_total(
         manager=manager,
         checkout_info=checkout_info,
         lines=lines,
@@ -3720,6 +3755,14 @@ def test_checkout_complete_own_reservation(
     transaction_item_generator,
 ):
     # given
+    checkout = checkout_with_item
+    checkout_line = checkout.lines.first()
+    stock = Stock.objects.get(product_variant=checkout_line.variant)
+    quantity_available = get_available_quantity_for_stock(stock)
+
+    checkout_line.quantity = quantity_available
+    checkout_line.save()
+
     checkout = prepare_checkout_for_test(
         checkout_with_item,
         address,
@@ -3728,12 +3771,6 @@ def test_checkout_complete_own_reservation(
         transaction_item_generator,
         transaction_events_generator,
     )
-    checkout_line = checkout.lines.first()
-    stock = Stock.objects.get(product_variant=checkout_line.variant)
-    quantity_available = get_available_quantity_for_stock(stock)
-
-    checkout_line.quantity = quantity_available
-    checkout_line.save()
 
     reservation = Reservation.objects.create(
         checkout_line=checkout_line,
@@ -4075,6 +4112,13 @@ def test_complete_checkout_raises_error_for_local_stock(
     transaction_item_generator,
 ):
     # given
+    checkout = checkout_with_item_for_cc
+    checkout_line = checkout.lines.first()
+    stock = Stock.objects.get(product_variant=checkout_line.variant)
+    quantity_available = get_available_quantity_for_stock(stock)
+    checkout_line.quantity = quantity_available + 1
+    checkout_line.save()
+
     checkout = prepare_checkout_for_test(
         checkout_with_item_for_cc,
         None,
@@ -4083,15 +4127,10 @@ def test_complete_checkout_raises_error_for_local_stock(
         transaction_item_generator,
         transaction_events_generator,
     )
-    checkout_line = checkout.lines.first()
-    stock = Stock.objects.get(product_variant=checkout_line.variant)
-    quantity_available = get_available_quantity_for_stock(stock)
-    checkout_line.quantity = quantity_available + 1
-    checkout_line.save()
 
     variables = {
         "id": to_global_id_or_none(checkout),
-        "rediirectUrl": "https://www.example.com",
+        "redirectUrl": "https://www.example.com",
     }
 
     checkout.collection_point = warehouse_for_cc
@@ -4120,6 +4159,14 @@ def test_comp_checkout_builds_order_for_all_warehouse_even_if_not_available_loca
     transaction_item_generator,
 ):
     # given
+    checkout = checkout_with_item_for_cc
+    checkout_line = checkout.lines.first()
+    stock = Stock.objects.get(
+        product_variant=checkout_line.variant, warehouse=warehouse_for_cc
+    )
+    quantity_available = get_available_quantity_for_stock(stock)
+    checkout_line.quantity = quantity_available + 1
+    checkout_line.save()
     checkout = prepare_checkout_for_test(
         checkout_with_item_for_cc,
         None,
@@ -4128,13 +4175,6 @@ def test_comp_checkout_builds_order_for_all_warehouse_even_if_not_available_loca
         transaction_item_generator,
         transaction_events_generator,
     )
-    checkout_line = checkout.lines.first()
-    stock = Stock.objects.get(
-        product_variant=checkout_line.variant, warehouse=warehouse_for_cc
-    )
-    quantity_available = get_available_quantity_for_stock(stock)
-    checkout_line.quantity = quantity_available + 1
-    checkout_line.save()
 
     warehouse_for_cc.click_and_collect_option = (
         WarehouseClickAndCollectOption.ALL_WAREHOUSES
@@ -4168,14 +4208,7 @@ def test_checkout_complete_raises_InsufficientStock_when_quantity_above_stock_su
     transaction_item_generator,
 ):
     # given
-    checkout = prepare_checkout_for_test(
-        checkout_with_item_for_cc,
-        None,
-        address,
-        None,
-        transaction_item_generator,
-        transaction_events_generator,
-    )
+    checkout = checkout_with_item_for_cc
     checkout_line = checkout.lines.first()
     overall_stock_quantity = (
         Stock.objects.filter(product_variant=checkout_line.variant).aggregate(
@@ -4184,6 +4217,14 @@ def test_checkout_complete_raises_InsufficientStock_when_quantity_above_stock_su
     ).pop("quantity__sum")
     checkout_line.quantity = overall_stock_quantity + 1
     checkout_line.save()
+    checkout = prepare_checkout_for_test(
+        checkout_with_item_for_cc,
+        None,
+        address,
+        None,
+        transaction_item_generator,
+        transaction_events_generator,
+    )
     warehouse_for_cc.click_and_collect_option = (
         WarehouseClickAndCollectOption.ALL_WAREHOUSES
     )
@@ -5421,3 +5462,52 @@ def test_checkout_complete_with_different_email_than_user_email(
     order = Order.objects.first()
     assert order.user_email == checkout.email
     assert order.user.email == checkout.user.email
+
+
+def test_checkout_complete_sets_product_type_id_for_all_order_lines(
+    user_api_client,
+    checkout_ready_to_complete,
+    address,
+    address_usa,
+    shipping_method,
+    transaction_events_generator,
+    transaction_item_generator,
+    customer_user,
+):
+    # given
+    checkout = prepare_checkout_for_test(
+        checkout_ready_to_complete,
+        address,
+        address_usa,
+        shipping_method,
+        transaction_item_generator,
+        transaction_events_generator,
+        user=customer_user,
+        save_billing_address=True,
+        save_shipping_address=True,
+    )
+
+    lines, _ = fetch_checkout_lines(checkout)
+
+    variant_id_to_product_type_id_map = {
+        line.variant.id: line.product_type.id for line in lines
+    }
+
+    variables = {
+        "id": to_global_id_or_none(checkout),
+        "redirectUrl": "https://www.example.com",
+    }
+
+    # when
+    response = user_api_client.post_graphql(MUTATION_CHECKOUT_COMPLETE, variables)
+
+    # then
+    content = get_graphql_content(response)
+    data = content["data"]["checkoutComplete"]
+    assert not data["errors"]
+
+    order = Order.objects.first()
+    for line in order.lines.all():
+        assert (
+            line.product_type_id == variant_id_to_product_type_id_map[line.variant_id]
+        )

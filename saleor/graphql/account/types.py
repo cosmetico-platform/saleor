@@ -24,7 +24,7 @@ from ...thumbnail.utils import (
 from ..account.utils import check_is_owner_or_has_one_of_perms
 from ..app.dataloaders import AppByIdLoader, get_app_promise
 from ..app.types import App
-from ..channel.dataloaders import ChannelBySlugLoader
+from ..channel.dataloaders.by_self import ChannelBySlugLoader
 from ..channel.types import Channel
 from ..checkout.dataloaders import CheckoutByUserAndChannelLoader, CheckoutByUserLoader
 from ..checkout.types import Checkout, CheckoutCountableConnection
@@ -944,7 +944,7 @@ class AddressValidationData(BaseObjectType):
     postal_code_matchers = NonNullList(
         graphene.String,
         required=True,
-        description=("The regular expression for postal code validation."),
+        description="The regular expression for postal code validation.",
     )
     postal_code_examples = NonNullList(
         graphene.String,
@@ -1046,7 +1046,7 @@ class Group(ModelObjectType[models.Group]):
     @staticmethod
     def resolve_users(root: models.Group, info: ResolveInfo):
         database_connection_name = get_database_connection_name(info.context)
-        return root.user_set.using(database_connection_name).all()  # type: ignore[attr-defined]
+        return root.user_set.using(database_connection_name).all()
 
     @staticmethod
     def resolve_permissions(root: models.Group, info: ResolveInfo):

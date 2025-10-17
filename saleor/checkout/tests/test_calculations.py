@@ -16,11 +16,12 @@ from ...core.taxes import (
     TaxDataError,
     TaxDataErrorMessage,
     TaxLineData,
+    zero_money,
     zero_taxed_money,
 )
 from ...graphql.core.utils import to_global_id_or_none
 from ...plugins import PLUGIN_IDENTIFIER_PREFIX
-from ...plugins.avatax.plugin import AvataxPlugin
+from ...plugins.avatax.plugin import DeprecatedAvataxPlugin
 from ...plugins.avatax.tests.conftest import plugin_configuration  # noqa: F401
 from ...plugins.manager import get_plugins_manager
 from ...plugins.tests.sample_plugins import PluginSample
@@ -29,6 +30,7 @@ from ...shipping.interface import ShippingMethodData
 from ...tax import TaxCalculationStrategy
 from ...tax.calculations.checkout import update_checkout_prices_with_flat_rates
 from ...tests import race_condition
+from .. import CheckoutAuthorizeStatus, CheckoutChargeStatus
 from ..base_calculations import (
     base_checkout_delivery_price,
     calculate_base_line_total_price,
@@ -37,6 +39,7 @@ from ..calculations import (
     _apply_tax_data,
     _calculate_and_add_tax,
     _set_checkout_base_prices,
+    calculate_checkout_total,
     fetch_checkout_data,
     logger,
 )
@@ -51,7 +54,7 @@ from ..utils import (
 @pytest.fixture
 def tax_data(checkout_with_items, checkout_lines):
     checkout = checkout_with_items
-    tax_rate = Decimal("23")
+    tax_rate = Decimal(23)
     net = Decimal("10.000")
     gross = Decimal("12.300")
     lines = checkout_lines
@@ -1110,7 +1113,7 @@ def test_fetch_checkout_data_tax_data_missing_tax_id_empty_tax_data(
 
 
 @patch("saleor.plugins.avatax.plugin.get_checkout_tax_data")
-@override_settings(PLUGINS=["saleor.plugins.avatax.plugin.AvataxPlugin"])
+@override_settings(PLUGINS=["saleor.plugins.avatax.plugin.DeprecatedAvataxPlugin"])
 def test_fetch_order_data_plugin_tax_data_with_negative_values(
     mock_get_tax_data,
     checkout_with_item_and_shipping,
@@ -1121,7 +1124,7 @@ def test_fetch_order_data_plugin_tax_data_with_negative_values(
     checkout = checkout_with_item_and_shipping
 
     channel = checkout.channel
-    channel.tax_configuration.tax_app_id = AvataxPlugin.PLUGIN_IDENTIFIER
+    channel.tax_configuration.tax_app_id = DeprecatedAvataxPlugin.PLUGIN_IDENTIFIER
     channel.tax_configuration.save(update_fields=["tax_app_id"])
 
     tax_data = {
@@ -1155,7 +1158,7 @@ def test_fetch_order_data_plugin_tax_data_with_negative_values(
 
 
 @patch("saleor.plugins.avatax.plugin.get_checkout_tax_data")
-@override_settings(PLUGINS=["saleor.plugins.avatax.plugin.AvataxPlugin"])
+@override_settings(PLUGINS=["saleor.plugins.avatax.plugin.DeprecatedAvataxPlugin"])
 def test_fetch_order_data_plugin_tax_data_price_overflow(
     mock_get_tax_data,
     checkout_with_item_and_shipping,
@@ -1166,7 +1169,7 @@ def test_fetch_order_data_plugin_tax_data_price_overflow(
     checkout = checkout_with_item_and_shipping
 
     channel = checkout.channel
-    channel.tax_configuration.tax_app_id = AvataxPlugin.PLUGIN_IDENTIFIER
+    channel.tax_configuration.tax_app_id = DeprecatedAvataxPlugin.PLUGIN_IDENTIFIER
     channel.tax_configuration.save(update_fields=["tax_app_id"])
 
     tax_data = {
@@ -1268,6 +1271,94 @@ def test_fetch_checkout_with_prior_price_none(
     line.refresh_from_db()
     assert line.prior_unit_price_amount is None
     assert line.currency is not None
+
+
+def test_fetch_checkout_data_updates_status_for_zero_amount_checkout_with_lines(
+    checkout_with_item_total_0,
+):
+    # given
+    lines, _ = fetch_checkout_lines(checkout_with_item_total_0)
+    manager = get_plugins_manager(allow_replica=False)
+    checkout_info = fetch_checkout_info(checkout_with_item_total_0, lines, manager)
+    address = (
+        checkout_with_item_total_0.shipping_address
+        or checkout_with_item_total_0.billing_address,
+    )
+
+    assert checkout_with_item_total_0.total.gross == zero_money(
+        checkout_with_item_total_0.total.currency
+    )
+    assert checkout_with_item_total_0.authorize_status == CheckoutAuthorizeStatus.NONE
+    assert checkout_with_item_total_0.charge_status == CheckoutChargeStatus.NONE
+    assert bool(lines) is True
+
+    # when
+    fetch_checkout_data(
+        checkout_info=checkout_info,
+        manager=manager,
+        lines=lines,
+        address=address,
+    )
+
+    # then
+    checkout_with_item_total_0.refresh_from_db()
+    assert checkout_with_item_total_0.authorize_status == CheckoutAuthorizeStatus.FULL
+    assert checkout_with_item_total_0.charge_status == CheckoutChargeStatus.FULL
+
+
+@pytest.mark.parametrize(
+    ("gift_card_balance", "expected_authorize_status", "expected_charge_status"),
+    [
+        (0, CheckoutAuthorizeStatus.PARTIAL, CheckoutChargeStatus.PARTIAL),
+        (10, CheckoutAuthorizeStatus.PARTIAL, CheckoutChargeStatus.PARTIAL),
+        (20, CheckoutAuthorizeStatus.FULL, CheckoutChargeStatus.FULL),
+        (40, CheckoutAuthorizeStatus.FULL, CheckoutChargeStatus.OVERCHARGED),
+    ],
+)
+def test_fetch_checkout_data_considers_gift_cards_balance_when_updating_checkout_payment_status(
+    checkout_with_gift_card,
+    gift_card_balance,
+    expected_authorize_status,
+    expected_charge_status,
+    transaction_item_generator,
+):
+    # given
+    checkout = checkout_with_gift_card
+    gift_card = checkout.gift_cards.first()
+    gift_card.initial_balance_amount = Decimal(gift_card_balance)
+    gift_card.current_balance_amount = Decimal(gift_card_balance)
+    gift_card.save()
+
+    lines, _ = fetch_checkout_lines(checkout)
+    manager = get_plugins_manager(allow_replica=False)
+    checkout_info = fetch_checkout_info(checkout, lines, manager)
+    address = checkout.shipping_address or checkout.billing_address
+
+    assert checkout.authorize_status == CheckoutAuthorizeStatus.NONE
+    assert checkout.charge_status == CheckoutChargeStatus.NONE
+
+    transaction_item_generator(
+        checkout_id=checkout.pk,
+        charged_value=Decimal(10),
+    )
+
+    total = calculate_checkout_total(
+        manager=manager, checkout_info=checkout_info, lines=lines, address=address
+    )
+    assert total.gross.amount == Decimal(30)
+
+    # when
+    fetch_checkout_data(
+        checkout_info=checkout_info,
+        manager=manager,
+        lines=lines,
+        address=address,
+    )
+
+    # then
+    checkout.refresh_from_db()
+    assert checkout.authorize_status == expected_authorize_status
+    assert checkout.charge_status == expected_charge_status
 
 
 def test_fetch_checkout_data_checkout_removed_before_save(

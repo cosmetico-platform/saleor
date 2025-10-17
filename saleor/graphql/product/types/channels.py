@@ -19,7 +19,7 @@ from ....tax.utils import (
     get_tax_rate_for_country,
 )
 from ...account import types as account_types
-from ...channel.dataloaders import ChannelByIdLoader
+from ...channel.dataloaders.by_self import ChannelByIdLoader
 from ...channel.types import Channel
 from ...core.descriptions import ADDED_IN_321
 from ...core.doc_category import DOC_CATEGORY_PRODUCTS
@@ -279,7 +279,7 @@ class ProductChannelListing(ModelObjectType[models.ProductChannelListing]):
                                 tax_class_id
                             )
                             if tax_class_id
-                            else []
+                            else Promise.resolve([])
                         )
                         default_country_rate = TaxClassDefaultRateByCountryLoader(
                             context

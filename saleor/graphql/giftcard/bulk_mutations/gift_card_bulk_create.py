@@ -62,7 +62,7 @@ class GiftCardBulkCreate(BaseMutation):
         )
 
     class Meta:
-        description = "Create gift cards."
+        description = "Creates gift cards."
         doc_category = DOC_CATEGORY_GIFT_CARDS
         model = models.GiftCard
         permissions = (GiftcardPermissions.MANAGE_GIFT_CARD,)
@@ -169,7 +169,7 @@ class GiftCardBulkCreate(BaseMutation):
         models.GiftCardTag.objects.bulk_create(
             [models.GiftCardTag(name=tag) for tag in tags_to_create]
         )
-        for tag_instance in tags_instances.iterator():
+        for tag_instance in tags_instances.iterator(chunk_size=1000):
             tag_instance.gift_cards.set(instances)
 
     @classmethod

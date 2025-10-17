@@ -129,9 +129,30 @@ class TransactionRequestEventResponse:
 
 
 @dataclass
-class TransactionRequestResponse:
+class PaymentMethodDetails:
+    type: str
+    name: str
+    brand: str | None = None
+    first_digits: str | None = None
+    last_digits: str | None = None
+    exp_month: int | None = None
+    exp_year: int | None = None
+
+
+@dataclass
+class TransactionResponseBase:
     psp_reference: str | None
-    available_actions: list[str] | None = None
+    available_actions: list[str] | None
+
+
+@dataclass
+class TransactionSessionResponse(TransactionResponseBase):
+    event: TransactionRequestEventResponse
+    payment_method_details: PaymentMethodDetails | None = None
+
+
+@dataclass
+class TransactionRequestResponse(TransactionResponseBase):
     event: Optional["TransactionRequestEventResponse"] = None
 
 
@@ -185,7 +206,7 @@ class PaymentMethodTokenizationBaseRequestData:
 @dataclass
 class PaymentMethodTokenizationBaseResponseData:
     error: str | None
-    data: dict | None
+    data: JSONValue | None
 
 
 @dataclass
@@ -295,9 +316,9 @@ class GatewayResponse:
     error: str | None
     customer_id: str | None = None
     payment_method_info: PaymentMethodInfo | None = None
+    # @deprecated
     raw_response: dict[str, str] | None = None
     action_required_data: JSONType | None = None
-
     # Some gateway can process transaction asynchronously. This value define if we
     # should create new transaction based on this response
     transaction_already_processed: bool = False

@@ -9,10 +9,12 @@ RUN apt-get -y update \
 
 # Install Python dependencies
 WORKDIR /app
-RUN --mount=type=cache,mode=0755,target=/root/.cache/pip pip install poetry==2.1.1
-RUN poetry config virtualenvs.create false
-COPY poetry.lock pyproject.toml /app/
-RUN --mount=type=cache,mode=0755,target=/root/.cache/pypoetry poetry install
+COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /bin/
+ENV UV_COMPILE_BYTECODE=1 UV_SYSTEM_PYTHON=1 UV_PROJECT_ENVIRONMENT=/usr/local
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-editable
 
 ### Final image
 FROM python:3.12-slim
@@ -48,7 +50,11 @@ WORKDIR /app
 
 ARG STATIC_URL
 ENV STATIC_URL=${STATIC_URL:-/static/}
-RUN SECRET_KEY=dummy STATIC_URL=${STATIC_URL} python3 manage.py collectstatic --no-input
+# Usa variabili dummy per collectstatic (disabilita validazione JWT)
+RUN SECRET_KEY=dummy \
+    DEBUG=True \
+    STATIC_URL=${STATIC_URL} \
+    python3 manage.py collectstatic --no-input
 
 EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
@@ -60,4 +66,9 @@ LABEL org.opencontainers.image.title="saleor/saleor" \
   org.opencontainers.image.authors="Saleor Commerce (https://saleor.io)" \
   org.opencontainers.image.licenses="BSD-3-Clause"
 
-CMD ["uvicorn", "saleor.asgi:application", "--host=0.0.0.0", "--port=8000", "--workers=2", "--lifespan=off", "--ws=none", "--no-server-header", "--no-access-log", "--timeout-keep-alive=35", "--timeout-graceful-shutdown=30", "--limit-max-requests=10000"]
+# Script di inizializzazione intelligente
+COPY scripts/init-smart.sh /init.sh
+COPY scripts/load-keys.sh /load-keys.sh
+RUN chmod +x /init.sh /load-keys.sh
+
+CMD ["/load-keys.sh", "/init.sh"]

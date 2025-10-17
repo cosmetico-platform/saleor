@@ -490,10 +490,7 @@ def check_permissions_for_custom_prices(app, lines):
     if any("price" in line for line in lines) and (
         not app or not app.has_perm(CheckoutPermissions.HANDLE_CHECKOUTS)
     ):
-        raise PermissionDenied(
-            message="Setting the custom price is allowed only for apps with `MANAGE_CHECKOUTS` permission.",
-            permissions=[CheckoutPermissions.HANDLE_CHECKOUTS],
-        )
+        raise PermissionDenied(permissions=[CheckoutPermissions.HANDLE_CHECKOUTS])
 
 
 def find_line_id_when_variant_parameter_used(
@@ -602,12 +599,12 @@ def _set_checkout_base_subtotal_and_total_on_checkout_creation(
             channel_id=checkout.channel_id,
         ).values_list("variant_id", "discounted_price_amount", "price_amount")
     }
-    subtotal = Decimal("0")
+    subtotal = Decimal(0)
     for line in checkout.lines.all():
         if price_amount := line.price_override:
             price = price_amount
         else:
-            price = variant_id_to_discounted_price.get(line.variant_id) or Decimal("0")
+            price = variant_id_to_discounted_price.get(line.variant_id) or Decimal(0)
         subtotal += price * line.quantity
     checkout.base_subtotal = Money(subtotal, checkout.currency)
     # base total and subtotal is the same, as there is no option to set the

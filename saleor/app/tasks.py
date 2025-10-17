@@ -81,9 +81,9 @@ def _raw_remove_deliveries(deliveries_ids):
     ]
     delete_files_from_private_storage_task.delay(files_to_delete)
 
-    attempts._raw_delete(attempts.db)  # type: ignore[attr-defined] # raw access # noqa: E501
-    deliveries._raw_delete(deliveries.db)  # type: ignore[attr-defined] # raw access # noqa: E501
-    payloads._raw_delete(payloads.db)  # type: ignore[attr-defined] # raw access # noqa: E501
+    attempts._raw_delete(attempts.db)
+    deliveries._raw_delete(deliveries.db)
+    payloads._raw_delete(payloads.db)
 
 
 @celeryconf.app.task
@@ -94,7 +94,7 @@ def remove_apps_task():
 
     # Saleor needs to remove app by app to prevent timeouts
     # on database when removing many deliveries.
-    for app in apps.iterator():
+    for app in apps.iterator(chunk_size=1000):
         webhooks = Webhook.objects.filter(app_id=app.id)
 
         # Saleor uses batch size here to prevent timeouts on database.

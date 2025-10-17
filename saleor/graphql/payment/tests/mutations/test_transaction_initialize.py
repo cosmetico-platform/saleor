@@ -1104,7 +1104,7 @@ def test_order_status_with_order_confirmation(
 
 
 @pytest.mark.parametrize(
-    ("auto_order_confirmation"),
+    "auto_order_confirmation",
     [True, False],
 )
 @mock.patch("saleor.plugins.manager.PluginsManager.transaction_initialize_session")
@@ -1176,8 +1176,8 @@ def test_order_with_transaction_when_amount_is_not_provided(
 ):
     # given
     order = order_with_lines
-    expected_charged_amount = Decimal("10")
-    expected_authorized_amount = Decimal("3")
+    expected_charged_amount = Decimal(10)
+    expected_authorized_amount = Decimal(3)
     transaction_item_generator(
         order_id=order.pk,
         charged_value=expected_charged_amount,
@@ -1244,8 +1244,8 @@ def test_checkout_with_transaction_when_amount_is_not_provided(
     checkout_info, _ = fetch_checkout_data(checkout_info, plugins_manager, lines)
     checkout = checkout_info.checkout
 
-    expected_charged_amount = Decimal("10")
-    expected_authorized_amount = Decimal("3")
+    expected_charged_amount = Decimal(10)
+    expected_authorized_amount = Decimal(3)
     transaction_item_generator(
         checkout_id=checkout.pk,
         charged_value=expected_charged_amount,
@@ -1647,8 +1647,8 @@ def test_app_with_action_field(
 ):
     # given
     checkout = checkout_with_prices
-    expected_charged_amount = Decimal("10")
-    expected_authorized_amount = Decimal("3")
+    expected_charged_amount = Decimal(10)
+    expected_authorized_amount = Decimal(3)
     transaction_item_generator(
         checkout_id=checkout.pk,
         charged_value=expected_charged_amount,
@@ -1691,8 +1691,8 @@ def test_customer_with_action_field(
 ):
     # given
     checkout = checkout_with_prices
-    expected_charged_amount = Decimal("10")
-    expected_authorized_amount = Decimal("3")
+    expected_charged_amount = Decimal(10)
+    expected_authorized_amount = Decimal(3)
     transaction_item_generator(
         checkout_id=checkout.pk,
         charged_value=expected_charged_amount,
@@ -1725,8 +1725,8 @@ def test_incorrect_source_object_id(
 ):
     # given
     checkout = checkout_with_prices
-    expected_charged_amount = Decimal("10")
-    expected_authorized_amount = Decimal("3")
+    expected_charged_amount = Decimal(10)
+    expected_authorized_amount = Decimal(3)
     transaction_item_generator(
         checkout_id=checkout.pk,
         charged_value=expected_charged_amount,

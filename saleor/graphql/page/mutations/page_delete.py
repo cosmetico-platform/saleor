@@ -10,6 +10,7 @@ from ....permission.enums import PagePermissions
 from ....product.lock_objects import product_qs_select_for_update
 from ....product.models import Product
 from ...core import ResolveInfo
+from ...core.context import ChannelContext
 from ...core.mutations import ModelDeleteMutation
 from ...core.types import PageError
 from ...plugins.dataloaders import get_plugin_manager_promise
@@ -32,11 +33,14 @@ class PageDelete(ModelDeleteMutation):
     def perform_mutation(cls, _root, info: ResolveInfo, /, **data):
         page = cls.get_instance(info, **data)
         manager = get_plugin_manager_promise(info.context).get()
+        page_type = page.page_type
         with traced_atomic_transaction():
             cls.delete_assigned_attribute_values(page)
             cls.update_products_search_index(page)
             response = super().perform_mutation(_root, info, **data)
+            page.page_type = page_type
             cls.call_event(manager.page_deleted, page)
+        response.page = ChannelContext(page, channel_slug=None)
         return response
 
     @classmethod
