@@ -551,6 +551,15 @@ AZURE_CONTAINER = os.environ.get("AZURE_CONTAINER")
 AZURE_CONTAINER_PRIVATE = os.environ.get("AZURE_CONTAINER_PRIVATE")
 AZURE_SSL = os.environ.get("AZURE_SSL")
 
+# MinIO Object Storage configuration
+MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "localhost")
+MINIO_PORT = os.environ.get("MINIO_PORT", "9000")
+MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin123")
+MINIO_USE_SSL = get_bool_from_env("MINIO_USE_SSL", False)
+MINIO_MEDIA_BUCKET_NAME = os.environ.get("MINIO_MEDIA_BUCKET_NAME", "saleor-media")
+MINIO_MEDIA_CUSTOM_DOMAIN = os.environ.get("MINIO_MEDIA_CUSTOM_DOMAIN")
+
 # Replicate behavior of creating default values
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -568,6 +577,8 @@ elif GS_MEDIA_BUCKET_NAME:
     STORAGES["default"] = {"BACKEND": "saleor.core.storages.GCSMediaStorage"}
 elif AZURE_CONTAINER:
     STORAGES["default"] = {"BACKEND": "saleor.core.storages.AzureMediaStorage"}
+elif MINIO_MEDIA_BUCKET_NAME:
+    STORAGES["default"] = {"BACKEND": "saleor.core.minio_storage.MinIOStorage"}
 
 PRIVATE_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
 if AWS_MEDIA_PRIVATE_BUCKET_NAME:

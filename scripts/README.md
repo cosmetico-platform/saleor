@@ -1,93 +1,77 @@
-# 🔧 Scripts Saleor
+# Scripts Saleor
 
-## 📋 Struttura Script
+## 🚀 Setup Principale
 
-### `setup.sh` - Script Principale
-**Script unificato per la gestione completa di Saleor**
+### `setup.sh` - Script Unificato
+
+Script principale che gestisce tutto il setup di Saleor con MinIO integrato.
+
+#### Comandi Disponibili
 
 ```bash
-./scripts/setup.sh [comando]
-```
-
-**Comandi disponibili:**
-- `setup` (default) - Setup completo: genera chiavi, carica env, avvia servizi
-- `secrets` - Genera solo le chiavi sicure (JWT, SECRET_KEY, password)
-- `env` - Carica solo le variabili d'ambiente nel file .env
-- `start` - Avvia solo i servizi Docker
-- `help` - Mostra l'aiuto
-
-**Esempi:**
-```bash
-# Setup completo
+# Setup completo (default)
 ./scripts/setup.sh
 
-# Solo generazione chiavi
-./scripts/setup.sh secrets
-
-# Solo caricamento variabili
-./scripts/setup.sh env
-
-# Solo avvio servizi
-./scripts/setup.sh start
+# Comandi specifici
+./scripts/setup.sh secrets      # Genera solo le chiavi sicure
+./scripts/setup.sh env          # Carica solo le variabili d'ambiente
+./scripts/setup.sh start        # Avvia solo i servizi Docker
+./scripts/setup.sh init-minio   # Inizializza MinIO
+./scripts/setup.sh dev          # Avvia in modalità development
+./scripts/setup.sh help         # Mostra aiuto
 ```
 
-### `load-keys.sh` - Caricamento Chiavi JWT
-**Script utilizzato da Docker per caricare le chiavi JWT**
+#### Funzionalità Integrate
 
-- Legge le chiavi dai file montati in `/app/keys/`
-- Le esporta come variabili d'ambiente `RSA_PRIVATE_KEY` e `RSA_PUBLIC_KEY`
-- Utilizzato automaticamente da `docker-compose.yml`
+- ✅ **Generazione Chiavi Sicure**: JWT, password, secret key
+- ✅ **Configurazione Ambiente**: Variabili d'ambiente automatiche
+- ✅ **Gestione MinIO**: Inizializzazione e test automatici
+- ✅ **Avvio Servizi**: Docker Compose integrato
+- ✅ **Modalità Development**: Setup semplificato per sviluppo
 
-### `init-smart.sh` - Inizializzazione Saleor
-**Script di inizializzazione intelligente per i container**
+## 🔧 Altri Script
 
-- Esegue migrazioni database
-- Raccoglie file statici
-- Crea superuser solo al primo avvio
-- Avvia il server Uvicorn
+### `load-keys.sh`
+Script per caricare le chiavi JWT nei container Docker.
 
-## 🔄 Workflow Tipico
+### `init-smart.sh`
+Script per inizializzazione intelligente del database.
+
+### `onboard-dev.sh`
+Script per onboarding sviluppatori.
+
+## 📋 Workflow Tipico
 
 ### Setup Iniziale
 ```bash
+cd /home/vito/cosmetico/saleor
 ./scripts/setup.sh
 ```
 
-### Aggiornamento Configurazioni
+### Sviluppo
 ```bash
-./scripts/setup.sh env
-docker compose restart
+./scripts/setup.sh dev
 ```
 
-### Rigenerazione Chiavi
+
+## 🎯 Vantaggi della Nuova Struttura
+
+1. **Unificazione**: Un solo script per tutto
+2. **Semplicità**: Meno file da gestire
+3. **Manutenibilità**: Codice centralizzato
+4. **Flessibilità**: Comandi specifici quando necessario
+5. **Integrazione**: MinIO completamente integrato
+
+## 🔍 Troubleshooting
+
+### MinIO non si inizializza
 ```bash
-./scripts/setup.sh secrets
-./scripts/setup.sh env
-docker compose restart
+./scripts/setup.sh init-minio
 ```
 
-### Solo Riavvio Servizi
+
+### Reset completo
 ```bash
-./scripts/setup.sh start
+docker compose down -v
+./scripts/setup.sh
 ```
-
-## 🔒 Sicurezza
-
-- Tutte le chiavi sono generate in formato PEM
-- Password sicure generate con `openssl rand`
-- File sensibili con permessi 600
-- Directory `secrets/` ignorata da Git
-
-## 📁 File Generati
-
-### Directory `secrets/`
-- `jwt_rsa` - Chiave privata JWT (PEM)
-- `jwt_rsa.pub` - Chiave pubblica JWT (PEM)
-- `secret_key.txt` - SECRET_KEY Django
-- `admin_password.txt` - Password admin
-- `database_password.txt` - Password database
-
-### File `.env`
-- Variabili d'ambiente complete per produzione
-- Valori sicuri espansi dai file secrets/
-- Configurazione CORS per i domini

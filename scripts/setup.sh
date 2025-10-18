@@ -89,9 +89,9 @@ HTTP_IP_FILTER_ALLOW_LOOPBACK_IPS=False
 
 # Dashboard
 DASHBOARD_URL=https://dashboard.vitoesposito.it/
+API_URL=https://saleor-api.vitoesposito.it/graphql/
 
 # CORS Configuration
-ALLOWED_GRAPHQL_ORIGINS=https://dashboard.vitoesposito.it,https://vitoesposito.it,https://api.vitoesposito.it,https://saleor-api.vitoesposito.it,https://cms.vitoesposito.it,https://storage.vitoesposito.it,https://mailpit.vitoesposito.it
 ALLOWED_HOSTS=saleor-api.vitoesposito.it,localhost,127.0.0.1
 ALLOWED_CLIENT_HOSTS=saleor-api.vitoesposito.it,dashboard.vitoesposito.it,vitoesposito.it,api.vitoesposito.it,cms.vitoesposito.it,storage.vitoesposito.it,mailpit.vitoesposito.it
 
@@ -109,10 +109,13 @@ ADMIN_LAST_NAME=admin
 # MinIO Object Storage
 MINIO_ROOT_USER=admin
 MINIO_ROOT_PASSWORD=$(cat "$SECRETS_DIR/minio_password.txt")
-MINIO_ENDPOINT=storage.vitoesposito.it
+MINIO_ENDPOINT=https://minio-api.vitoesposito.it
+MINIO_PORT=9001
 MINIO_USE_SSL=True
 MINIO_ACCESS_KEY=admin
 MINIO_SECRET_KEY=$(cat "$SECRETS_DIR/minio_password.txt")
+MINIO_MEDIA_BUCKET_NAME=saleor-media
+MINIO_MEDIA_CUSTOM_DOMAIN=https://storage.vitoesposito.it
 
 # JWT Keys (caricate automaticamente da secrets/)
 # RSA_PRIVATE_KEY e RSA_PUBLIC_KEY sono caricate dai file secrets/
@@ -121,6 +124,45 @@ EOF
     echo "✅ Variabili d'ambiente caricate con successo!"
     echo "📁 File .env creato in: $PROJECT_ROOT/.env"
 }
+
+
+# Funzione per inizializzare MinIO
+init_minio() {
+    echo "🪣 Inizializzazione MinIO..."
+    
+    # Attendi che MinIO sia pronto
+    echo "⏳ Attesa che MinIO sia pronto..."
+    local max_attempts=30
+    local attempt=0
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -f http://localhost:9001/minio/health/live >/dev/null 2>&1; then
+            echo "✅ MinIO è pronto!"
+            break
+        fi
+        echo "MinIO non ancora pronto, attesa... ($((attempt + 1))/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    
+    if [ $attempt -eq $max_attempts ]; then
+        echo "❌ MinIO non è diventato pronto dopo $max_attempts tentativi"
+        return 1
+    fi
+    
+    # Crea il bucket usando Docker exec
+    echo "📦 Creazione bucket 'saleor-media'..."
+    docker compose exec -T minio sh -c "
+        mc alias set local http://localhost:9000 admin $(cat "$SECRETS_DIR/minio_password.txt") &&
+        mc mb local/saleor-media --ignore-existing &&
+        mc anonymous set public local/saleor-media
+    " 2>/dev/null || {
+        echo "⚠️ Bucket potrebbe essere già esistente o errore di configurazione"
+    }
+    
+    echo "✅ MinIO inizializzato!"
+}
+
 
 # Funzione per avviare i servizi
 start_services() {
@@ -152,6 +194,29 @@ start_services() {
     echo "  - Console: https://storage.vitoesposito.it:9002"
 }
 
+# Funzione per avviare in modalità development
+start_dev() {
+    echo "🛠️ Avvio in modalità development..."
+    
+    # Carica variabili d'ambiente per development
+    load_environment
+    
+    # Avvia solo i servizi di supporto
+    echo "🐳 Avvio servizi di supporto..."
+    docker compose up -d db redis minio
+    
+    # Attendi che i servizi siano pronti
+    echo "⏳ Attesa servizi di supporto..."
+    sleep 10
+    
+    # Inizializza MinIO
+    init_minio
+    
+    
+    echo "✅ Modalità development pronta!"
+    echo "🚀 Avvia Saleor con: python manage.py runserver"
+}
+
 # Menu principale
 case "${1:-setup}" in
     "secrets")
@@ -163,11 +228,26 @@ case "${1:-setup}" in
     "start")
         start_services
         ;;
+    "init-minio")
+        init_minio
+        ;;
+    "dev")
+        start_dev
+        ;;
     "setup"|"")
         echo "🔄 Setup completo..."
         generate_secrets
         load_environment
         start_services
+        
+        # Attendi che i servizi siano pronti
+        echo "⏳ Attesa servizi..."
+        sleep 30
+        
+        # Inizializza MinIO
+        init_minio
+        
+        
         echo ""
         echo "🎉 Setup completato con successo!"
         echo "📋 Prossimi passi:"
@@ -179,11 +259,13 @@ case "${1:-setup}" in
         echo "Uso: $0 [comando]"
         echo ""
         echo "Comandi:"
-        echo "  setup    - Setup completo (default)"
-        echo "  secrets  - Genera solo le chiavi sicure"
-        echo "  env      - Carica solo le variabili d'ambiente"
-        echo "  start    - Avvia solo i servizi Docker"
-        echo "  help     - Mostra questo aiuto"
+        echo "  setup        - Setup completo (default)"
+        echo "  secrets      - Genera solo le chiavi sicure"
+        echo "  env          - Carica solo le variabili d'ambiente"
+        echo "  start        - Avvia solo i servizi Docker"
+        echo "  init-minio   - Inizializza MinIO"
+        echo "  dev          - Avvia in modalità development"
+        echo "  help         - Mostra questo aiuto"
         ;;
     *)
         echo "❌ Comando sconosciuto: $1"
